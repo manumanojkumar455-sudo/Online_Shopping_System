@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Checkout | ShopEasy{% endblock %}
+{% block content %}
+<div class="page-heading"><p class="eyebrow">ALMOST THERE</p><h1>Checkout</h1><p class="muted">College demonstration checkout. UPI/Card payments are simulated unless you configure Razorpay test keys. Cash on Delivery is recorded as pending.</p></div>
+<div class="checkout-layout">
+<form class="panel checkout-form" method="post">
+<h2>Delivery details</h2>
+<label>Recipient name<input name="customer_name" required maxlength="100" value="{{ session.get('name','') }}"></label>
+<label>Full delivery address<textarea name="address" required minlength="8" rows="4" placeholder="House/flat, street, area, city, state, PIN code"></textarea></label>
+<label>Discount coupon<input name="coupon" placeholder="WELCOME10 or SAVE5"></label>
+<h2>Payment method</h2>
+<label class="radio-option"><input type="radio" name="payment_method" value="Demo UPI" checked> UPI (Demo)</label>
+<label class="radio-option"><input type="radio" name="payment_method" value="Demo Card"> Card (Demo — do not enter card details)</label>
+<label class="radio-option"><input type="radio" name="payment_method" value="Cash on Delivery"> Cash on Delivery</label>
+<div class="demo-warning">Do not enter real card or bank details in the demo payment flow.</div>
+<h2>Demo payment result</h2>
+<label class="radio-option"><input type="radio" name="payment_result" value="success" checked> Simulate success</label>
+<label class="radio-option"><input type="radio" name="payment_result" value="failure"> Simulate failure</label>
+<button class="btn btn-primary btn-wide">Place demo order / Cash on Delivery</button>
+{% if razorpay_key_id %}<button type="button" id="razorpay-pay" class="btn btn-dark btn-wide">Pay securely with Razorpay (Test Mode)</button><p id="payment-message" class="muted small" role="status"></p>{% endif %}
+</form>
+<aside class="summary-card"><h2>Items in your order</h2>{% for item in items %}<div class="mini-item"><span>{{ item.product.image }} {{ item.product.name }} × {{ item.quantity }}</span><strong>₹{{ "%.2f"|format(item.line_total) }}</strong></div>{% endfor %}<div class="summary-row total-row"><span>Subtotal</span><strong>₹{{ "%.2f"|format(subtotal) }}</strong></div><p class="muted small">A valid coupon discount is applied when placing the order.</p></aside>
+</div>
+{% if razorpay_key_id %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const button = document.getElementById('razorpay-pay');
+  if (!button) return;
+  const form = button.closest('form');
+  const message = document.getElementById('payment-message');
+  button.addEventListener('click', async () => {
+    const formData = new FormData(form);
+    const details = {customer_name: formData.get('customer_name'), address: formData.get('address'), coupon: formData.get('coupon')};
+    if (!details.customer_name || !details.address || details.address.trim().length < 8) { message.textContent = 'Enter your name and full delivery address first.'; return; }
+    button.disabled = true; message.textContent = 'Opening secure test checkout…';
+    try {
+      const token = document.querySelector('meta[name="csrf-token"]').content;
+      const response = await fetch('{{ url_for("payment_create") }}', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':token}, body:JSON.stringify(details)});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to start payment');
+      const options = {key:data.key_id, amount:data.amount, currency:data.currency, name:data.name, description:data.description, order_id:data.order_id,
+        handler: async function(result) {
+          try {
+            const verify = await fetch('{{ url_for("payment_verify") }}', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':token}, body:JSON.stringify(result)});
+            const verified = await verify.json();
+            if (!verify.ok) throw new Error(verified.error || 'Payment verification failed');
+            window.location.href = verified.redirect_url;
+          } catch (error) { message.textContent = error.message; button.disabled = false; }
+        },
+        modal:{ondismiss:() => {button.disabled=false; message.textContent='Payment window closed. No order was placed.';}}
+      };
+      new Razorpay(options).open(); message.textContent = 'Complete the payment in the Razorpay test window.';
+    } catch (error) { message.textContent = error.message; button.disabled = false; }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

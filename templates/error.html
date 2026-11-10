@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Error {{ code }} | ShopEasy{% endblock %}{% block content %}<div class="empty-state"><h1>Error {{ code }}</h1><p>{{ message }}</p><a class="btn btn-primary" href="{{ url_for('index') }}">Return home</a></div>{% endblock %}
